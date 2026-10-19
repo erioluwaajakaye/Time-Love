@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Time Is of the Essence</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,700&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#c9a96e;--ivory:#f3ecdc;--night:#07080f;--serif:'Cormorant Garamond',Georgia,serif;--sans:'Montserrat','Helvetica Neue',Arial,sans-serif}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{font-family:var(--serif);color:var(--ivory);overflow:hidden;background:radial-gradient(circle at 50% 38%,#1c2038,var(--night) 72%)}
+.scene{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.6rem;text-align:center;padding:1rem;opacity:0;pointer-events:none;transition:opacity 1.2s}
+.scene.on{opacity:1;pointer-events:auto}
+.eyebrow{font:500 .7rem var(--sans);letter-spacing:.5em;text-transform:uppercase;color:var(--gold)}
+.rule{width:60px;height:1px;background:var(--gold);opacity:.7}
+h1{font-weight:400;font-style:italic;font-size:clamp(2rem,7vw,3.8rem);letter-spacing:.02em}
+button{font:500 .75rem var(--sans);letter-spacing:.3em;text-transform:uppercase;color:var(--gold);background:transparent;
+  border:1px solid var(--gold);padding:.95rem 2.2rem;cursor:pointer;transition:all .35s}
+button:hover{background:var(--gold);color:var(--night)}
+#yes{background:var(--gold);color:var(--night)}
+#yes:hover{background:var(--ivory);border-color:var(--ivory)}
+#mute{position:fixed;top:16px;right:16px;z-index:9;padding:.5rem .9rem;font-size:.6rem;border-color:#c9a96e66}
+.row{display:flex;gap:1.4rem;align-items:center;flex-wrap:wrap;justify-content:center}
+#yes,#no{transition:transform .4s,all .35s}
+.face{fill:rgba(255,255,255,.03);stroke:var(--gold);stroke-width:1.6}
+.hh{stroke:var(--ivory);stroke-width:4;stroke-linecap:round}
+.mh{stroke:var(--gold);stroke-width:2.5;stroke-linecap:round}
+#bigclock{width:min(62vw,270px);height:min(62vw,270px);filter:drop-shadow(0 0 22px #c9a96e44)}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,44px);grid-auto-rows:44px;grid-auto-flow:dense;gap:4px;
+  justify-content:center;align-content:center;position:absolute;inset:0;padding:6px;overflow:hidden}
+#grid svg{width:100%;height:100%;animation:pop .7s backwards}
+#grid .big{grid-area:span 2/span 2}
+#s3::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle,transparent 35%,var(--night) 100%)}
+@keyframes pop{from{transform:scale(.2);opacity:0}}
+#cv{position:fixed;inset:0;width:100%;height:100%}
+#again{position:fixed;bottom:6%;left:50%;transform:translateX(-50%);opacity:0;pointer-events:none;transition:opacity 1.5s,all .35s;
+  background:rgba(7,8,15,.6);backdrop-filter:blur(4px)}
+#again.vis{opacity:1;pointer-events:auto}
+</style>
+</head>
+<body>
+<button id="mute">Sound on</button>
+
+<section class="scene on" id="s1">
+  <div class="eyebrow">An invitation</div>
+  <div class="rule"></div>
+  <h1 id="q">Are you ready to begin?</h1>
+  <div class="row"><button id="yes">Yes</button><button id="no">No</button></div>
+</section>
+
+<section class="scene" id="s2">
+  <div class="eyebrow">Tempus fugit</div>
+  <h1>Time is of the essence</h1>
+  <svg id="bigclock" viewBox="0 0 100 100"></svg>
+</section>
+
+<section class="scene" id="s3"><div id="grid"></div></section>
+
+<section class="scene" id="s4">
+  <canvas id="cv"></canvas>
+  <button id="again">Once more</button>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const scenes = ['s1','s2','s3','s4'];
+const show = id => scenes.forEach(s => $(s).classList.toggle('on', s === id));
+const cl = v => Math.max(0, Math.min(1, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const FONT = '"Cormorant Garamond", Georgia, serif';
+document.fonts && document.fonts.load('italic 700 20px "Cormorant Garamond"');
+
+/* ---------- audio (synthesized in the browser, no files) ---------- */
+let ctx, muted = false;
+const notes = [392,440,523.25,587.33,659.25,783.99,880];
+function beep(f, dur = .5, type = 'sine', vol = .1){
+  if (!ctx || muted) return;
+  const o = ctx.createOscillator(), g = ctx.createGain(), n = ctx.currentTime;
+  o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(vol, n); g.gain.exponentialRampToValueAtTime(.0001, n + dur);
+  o.connect(g).connect(ctx.destination); o.start(); o.stop(n + dur);
+}
+function pad(freqs, dur = 4){            // slow swelling chord
+  if (!ctx || muted) return;
+  freqs.forEach(f => {
+    const o = ctx.createOscillator(), g = ctx.createGain(), n = ctx.currentTime;
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(.0001, n); g.gain.exponentialRampToValueAtTime(.06, n + dur*.45);
+    g.gain.exponentialRampToValueAtTime(.0001, n + dur);
+    o.connect(g).connect(ctx.destination); o.start(); o.stop(n + dur);
+  });
+}
+const tick = hi => beep(hi ? 1000 : 760, .07, 'triangle', .06);
+const chime = () => beep(notes[Math.floor(Math.random()*notes.length)], 1.2, 'sine', .09);
+$('mute').onclick = () => { muted = !muted; $('mute').textContent = muted ? 'Sound off' : 'Sound on'; };
+
+/* ---------- clocks ---------- */
+const clocks = [];
+function makeClock(svg, speed = 1){
+  const marks = [...Array(12)].map((_, i) =>
+    `<line x1="50" y1="9" x2="50" y2="${i%3?13:16}" stroke="#c9a96e" stroke-width="${i%3?1.2:2}" opacity=".7" transform="rotate(${i*30} 50 50)"/>`).join('');
+  svg.innerHTML = `<circle class="face" cx="50" cy="50" r="46"/>${marks}
+    <line class="hh" x1="50" y1="50" x2="50" y2="28"/><line class="mh" x1="50" y1="50" x2="50" y2="16"/>
+    <circle cx="50" cy="50" r="3" fill="#c9a96e"/>`;
+  clocks.push({h: svg.querySelector('.hh'), m: svg.querySelector('.mh'), speed, off: Math.random()*360});
+}
+(function loop(t){
+  clocks.forEach(c => {
+    const min = t * 0.3 * c.speed + c.off;
+    c.m.setAttribute('transform', `rotate(${min} 50 50)`);
+    c.h.setAttribute('transform', `rotate(${min/12} 50 50)`);
+  });
+  requestAnimationFrame(loop);
+})(0);
+makeClock($('bigclock'), 1.5);
+
+function buildGrid(){
+  const g = $('grid'); g.innerHTML = '';
+  const cells = Math.floor(innerWidth/48) * Math.floor(innerHeight/48);
+  let used = 0, i = 0;
+  while (used < cells * 0.95){
+    const big = Math.random() < 0.18;
+    const s = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    s.setAttribute('viewBox','0 0 100 100');
+    if (big) s.classList.add('big');
+    s.style.animationDelay = (i++ * 0.025) + 's';
+    g.appendChild(s);
+    makeClock(s, 0.6 + Math.random()*2);
+    used += big ? 4 : 1;
+  }
+}
+
+/* ---------- neon "I love you" finale (canvas) ---------- */
+const cv = $('cv'), g = cv.getContext('2d');
+let P = [], BG = [], W, H, BIG, T0, run = false;
+const heartXY = t => [16*Math.sin(t)**3, -(13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t))];
+
+function neon(txt, x, y, s, h, a, k = 1){
+  g.shadowBlur = 0;
+  g.font = `italic 700 ${s*1.35}px ${FONT}`;                 // faded, slightly bigger backdrop
+  g.fillStyle = `hsla(${h},100%,60%,${a*.14})`; g.fillText(txt, x, y);
+  g.font = `italic 700 ${s}px ${FONT}`;                      // crisp neon tube
+  g.shadowColor = `hsla(${h},100%,55%,${a})`; g.shadowBlur = s*.6*k;
+  g.fillStyle = `hsla(${h},100%,84%,${a})`; g.fillText(txt, x, y);
+  g.shadowBlur = 0;
+}
+
+function buildNeon(){
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W*dpr; cv.height = H*dpr; cv.style.width = W+"px"; cv.style.height = H+"px"; g.setTransform(dpr,0,0,dpr,0,0);
+  const S = Math.min(W/38, H/34), cx = W/2, cy = H/2 - 2.5*S, fo = Math.max(11, S*.85);
+  const placed = [];
+  const free = (x, y, gap) => placed.every(q => Math.hypot((x-q[0])*.4, y-q[1]) >= gap);
+  P = [];
+  const add = (x, y, d, sz) => { placed.push([x,y]); P.push({x, y, d, s: sz*rnd(.9,1.1), h: rnd(190,275), fl: rnd(0,6.28)}); };
+  for (let i = 0; i < 220; i++){                              // outline
+    const [hx, hy] = heartXY(i/220*2*Math.PI), x = cx + hx*S, y = cy + hy*S;
+    if (free(x, y, fo*1.5)) add(x, y, i/220*2600, fo);
+  }
+  for (let n = 0, c = 0; c < 110 && n < 9000; n++){          // fill
+    const [hx, hy] = heartXY(rnd(0, 2*Math.PI)), r = rnd(0, .86), x = cx + hx*r*S, y = cy + hy*r*S;
+    if (free(x, y, fo*2.2)){ add(x, y, 3000 + rnd(0, 2200), fo*.85); c++; }
+  }
+  BG = [];                                                    // tiny words for the back
+  for (let y = 14, r = 0; y < H; y += 24, r++)
+    for (let x = r%2 ? 30 : 0; x < W; x += 62) BG.push({x: x + rnd(-8,8), y: y + rnd(-4,4), h: rnd(0,360), fl: rnd(0,6.28)});
+  g.font = `italic 700 100px ${FONT}`;
+  BIG = Math.min(100*W*.9 / g.measureText('I love you').width, H*.55);
+}
+
+function frame(now){
+  if (!run) return;
+  const t = now - T0;
+  g.clearRect(0, 0, W, H); g.textAlign = 'center'; g.textBaseline = 'middle';
+  const hs = Math.max(0, t - 6500) * 0.07;                    // colours start shifting at 6.5s
+  const u = cl((t - 10500) / 5500), e = u*u*(3-2*u), z = Math.pow(9, e);   // zoom begins at 10.5s
+
+  const ba = .3 * cl((t - 10500) / 3000);                     // tiny background words
+  if (ba > 0){
+    g.font = `italic 600 11px ${FONT}`;
+    for (const b of BG){
+      g.fillStyle = `hsla(${b.h + hs*1.3},100%,70%,${ba*(.6+.4*Math.sin(t*.003 + b.fl))})`;
+      g.fillText('I love you', b.x, b.y);
+    }
+  }
+  const fade = 1 - cl((z-1)/3.2);                             // heart flies outward and fades
+  if (fade > 0) for (const p of P){
+    let a = cl((t - p.d)/500); if (a <= 0) continue;
+    if (a >= 1) a *= .82 + .18*Math.sin(t*.004 + p.fl);
+    const x = W/2 + (p.x - W/2)*z, y = H/2 + (p.y - H/2)*z;
+    if (x < -300 || x > W+300 || y < -100 || y > H+100) continue;
+    neon('I love you', x, y, p.s*z, p.h + hs, a*fade);
+  }
+  const cu = cl((u - .3)/.7);                                 // the one big I love you
+  if (cu > 0) neon('I love you', W/2, H/2, BIG*(1-Math.pow(1-cu,3))*(1 + .012*Math.sin(t*.004)), t*.05, 1, 2);
+  if (t > 16800) $('again').classList.add('vis');
+  requestAnimationFrame(frame);
+}
+
+/* ---------- story flow ---------- */
+const timers = []; let tickInt, arpInt;
+const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+function startNeon(){
+  buildNeon(); run = true; T0 = performance.now(); requestAnimationFrame(frame);
+  arpInt = setInterval(chime, 700);
+  later(() => pad([261.6,329.6,392], 4), 6500);
+  later(() => pad([196,293.7,392,493.9], 6), 10500);
+}
+function play(){
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  ctx.resume(); clocks.length = 1;
+  [0,2,4,6].forEach((n,i) => setTimeout(() => beep(notes[n], 1, 'sine', .1), i*140));
+  show('s2');
+  let k = 0; tickInt = setInterval(() => tick(k++ % 2), 500);
+  later(() => { buildGrid(); show('s3'); }, 4800);
+  later(chime, 5200); later(chime, 5800); later(chime, 6400);
+  later(() => { clearInterval(tickInt); startNeon(); show('s4'); }, 10500);
+}
+$('yes').onclick = play;
+$('again').onclick = () => {
+  run = false; timers.forEach(clearTimeout); clearInterval(tickInt); clearInterval(arpInt);
+  $('again').classList.remove('vis'); show('s1'); resetAsk();
+};
+
+const nos = ['Are you quite sure?','Take your time.','The clock is ticking…','Perhaps just once?','One small step.'];
+let nn = 0;
+function resetAsk(){ nn = 0; $('q').textContent = 'Are you ready to begin?'; $('yes').style.transform = ''; $('no').style.cssText = ''; }
+$('no').onclick = () => {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  beep(330, .4); $('q').textContent = nos[nn % nos.length]; nn++;
+  $('yes').style.transform = `scale(${1 + nn*0.15})`;
+  $('no').style.transform = `translate(${(Math.random()-.5)*120}px,${(Math.random()-.5)*60}px)`;
+  if (nn > 5) $('no').style.display = 'none';
+};
+</script>
+</body>
+</html>
